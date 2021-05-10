@@ -1,0 +1,3 @@
+{"email":"defaul@email.net","password":"defaultpass","password_hash":"defaulthash","salt":"defaultsalt"}
+{"email":"no@no.no","password":"yxc","password_hash":"none","salt":"none"}
+{"email":"yes@yes.com","password":"qay","password_hash":"none","salt":"none"}
