@@ -16,4 +16,5 @@ Cargo.lock
 
 # Added by me
 
-coolmailbox.txt
+*.txt
+!cooldatabase.txt
