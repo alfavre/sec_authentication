@@ -1,61 +1,15 @@
+mod credentials;
+mod constants;
+mod mail;
+
 use google_authenticator::GoogleAuthenticator;
 use read_input::prelude::*;
 use regex::Regex;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Error, Write};
-use serde::{Serialize, Deserialize};
+use std::io::Error;
 
-// special thanks to : https://regexr.com/
-const MAIL_REGEX: &'static str = r"^(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,4}$";
-const DB_PATH: &'static str = "cooldatabase.txt";
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Credential{
-    email: String,
-    password: String,
-    password_hash: String,
-    salt: String,
-}
+use credentials::Credential;
 
-impl Credential{
-    fn get_default_cred()->Credential{
-        Credential{
-            email: String::from("defaul@email.net"),
-            password: String::from("defaultpass"),
-            password_hash: String::from("defaulthash"),
-            salt: String::from("defaultsalt"),
-        }
-    }
-
-    fn collect_all_credentials()->Result<Vec<Credential>,Error>{
-
-        let mut vec = Vec::new();
-    
-        let input = File::open(DB_PATH)?;
-        let buffered = BufReader::new(input);
-    
-        for line in buffered.lines() {
-            vec.push(serde_json::from_str(line.unwrap().as_str()).unwrap());
-        }
-        Ok(vec)
-    }
-
-    fn write_all_credentials(all_cred:&mut Vec<Credential>)->Result<(),Error>{
-
-        let mut credentials_json = String::from("");
-        let mut output = File::create(DB_PATH)?;
-
-        for cred in all_cred {
-            credentials_json.push_str(&serde_json::to_string(&cred).unwrap());
-            credentials_json.push_str("\n");
-        }
-
-        write!(output,"{}",credentials_json)?;
-
-        Ok(())
-
-    }
-}
 
 
 
@@ -89,7 +43,7 @@ fn handle_register(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
 
     let email = get_string_unrestricted(email_message);
 
-    if !Regex::new(MAIL_REGEX).unwrap().is_match(email.as_str()) {
+    if !Regex::new(constants::MAIL_REGEX).unwrap().is_match(email.as_str()) {
         println!("Invalid email");
         return Ok(());
     }
@@ -125,16 +79,45 @@ fn handle_register(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
 }
 
 
-
 fn handle_forgot_password() -> () {
-    println!("you frogot pass")
+    println!("you frogot pass");
+}
+
+fn give_reg_token(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
+    let email_message = "Please enter an email address, more instructions will be sent there: ";
+
+
+    let email = get_string_unrestricted(email_message);
+
+    if !Regex::new(constants::MAIL_REGEX).unwrap().is_match(email.as_str()) {
+        println!("Invalid email");
+        return Ok(());
+    }
+
+    let mut is_already_in_use = false;
+    for cred in all_credentials{
+        if cred.email==email{
+            is_already_in_use = true;
+        }
+    }
+
+
+    let mut mail: String;
+    
+    
+    if is_already_in_use{
+        mail = String::from(format!("You are already registered\nIf this message wasn't expected, please ignore it."));
+    } else {
+        mail = String::from(format!("Here is your token: <dummy token>"))
+    }
+
+    Ok(())
 }
 
 fn main() {
-    let message_list = "1:\tlogin\n2:\tregister\n3:\tforgot my password\n\nEnter your choice: ";
+    let message_list = "1:\tlogin\n2:\tregister\n3:\tforgot my password\n4:\tget register token\nEnter your choice: ";
 
     loop {
-
         
         let mut all_cred = Credential::collect_all_credentials().unwrap();
         
@@ -142,7 +125,7 @@ fn main() {
         
 
         println!("Welcome to secure auth dot com\n");
-        let choice_input = get_choice(3, message_list);
+        let choice_input = get_choice(4, message_list);
 
         match choice_input {
             1 => handle_login(),
@@ -151,6 +134,10 @@ fn main() {
                 Err(e) => println!("Error happened: {}", e),
             },
             3 => handle_forgot_password(),
+            4 => match give_reg_token(&mut all_cred){
+                Ok(_) => (),
+                Err(e) => println!("Error happened: {}", e),
+            },
             _ => panic!("No, that is illegal you know ?"),
         }
     }
