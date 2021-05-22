@@ -31,7 +31,7 @@ fn get_string_unrestricted(message: &str) -> String {
 }
 
 fn handle_login() -> Result<bool, Error> {
-    let email_message = "Please enter an email address";
+    let email_message = "Please enter an email address: ";
     let mut email_input;
     loop {
         email_input = get_string_unrestricted(email_message);
@@ -55,7 +55,7 @@ fn handle_login() -> Result<bool, Error> {
 
     match Credential::is_2fa_active(email_input.as_str()) {
         Ok(true) => {
-            let google_token_message = "Please enter a google auth token";
+            let google_token_message = "Please enter a google auth token: ";
             let mut google_auth_token_input;
             loop {
                 google_auth_token_input = get_string_unrestricted(google_token_message);
@@ -65,18 +65,6 @@ fn handle_login() -> Result<bool, Error> {
                 }
                 break;
             }
-
-            println!(
-                "we here {} and {}",
-                Credential::is_verified_with_2fa(
-                    email_input.as_str(),
-                    google_auth_token_input.as_str(),
-                ),
-                Credential::is_verified_with_password(
-                    email_input.as_str(),
-                    password_input.as_str(),
-                )
-            );
 
             return Ok(Credential::is_verified_with_2fa(
                 email_input.as_str(),
@@ -187,8 +175,37 @@ fn handle_register(token: &Token) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle_forgot_password() -> () {
-    println!("you frogot pass, TODO");
+fn give_forgot_password_token(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
+    let ask_token_message =
+        "Please enter your email address, more instructions will be sent there: ";
+
+    let email_input = get_string_unrestricted(ask_token_message);
+
+    if !mail::is_email_valid(email_input.as_str()) {
+        println!("Not an email address");
+        return Ok(());
+    }
+
+    let mut is_already_in_use = false;
+
+    if all_credentials.iter().any(|cred| cred.email == email_input) {
+        is_already_in_use = true;
+    }
+
+    let mail_message: String = format!(
+        "Here is your password reset token\n{}",
+        Token::create(email_input.as_str())
+    );
+
+    if is_already_in_use {
+        mail::send_mail_to(
+            email_input.as_str(),
+            format!("Password reset to {}", constant::WEBSITE_NAME).as_str(),
+            mail_message.as_str(),
+        )?;
+    }
+
+    Ok(())
 }
 
 fn give_register_token(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
@@ -197,7 +214,7 @@ fn give_register_token(all_credentials: &mut Vec<Credential>) -> Result<(), Erro
     let email_input = get_string_unrestricted(ask_token_message);
 
     if !mail::is_email_valid(email_input.as_str()) {
-        println!("Invalid email");
+        println!("Not an email address");
         return Ok(());
     }
 
@@ -252,7 +269,10 @@ fn main() {
                 Ok(_) => (),
                 Err(e) => println!("Error happened: {}", e),
             },
-            3 => handle_forgot_password(),
+            3 => match give_forgot_password_token(&mut all_cred) {
+                Ok(_) => (),
+                Err(e) => println!("Error happened: {}", e),
+            },
             4 => match give_register_token(&mut all_cred) {
                 Ok(_) => (),
                 Err(e) => println!("Error happened: {}", e),

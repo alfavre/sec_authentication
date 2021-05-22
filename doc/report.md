@@ -26,11 +26,32 @@ A token is only valid 15 minutes from its creation date.
 If the registration process failed, the token will have been consumed, and the user will need to ask a new one.
 But this will only happen if there are unexpected things happenning in the database, which should never happen.
 
+#### Login
+
+Login works as expected, even if the code is pure spaghetti.
+Depending on the `is_2fa_active`. The 2fa token might or not be asked
+
+#### Forgotten password
+
+Not done yet
 
 #### Passwords
 
 the password strength is verified with `zxcvbn` as `passablepasswords` is deprecated.
+The password hash and salt are done with sodium oxyde default primitives.
 
 #### Token
 
-Token are generated with 32 random bytes from sodium oxyde, it might not be enough.
+Token are generated with 256 random bytes from sodium oxyde, it might too much.
+
+#### 2FA
+
+2FA is done with google authenticator, a fake mail with the link to the qr code is sent in `coolmailbox.txt`.
+To deactivate 2FA, it should be directly changed in `cooldatabase.txt`, change `true` to `false` for `is_2fa_active`
+the secret are kept in clear in database.
+
+TODO a user should be able to disable 2FA for itself !
+
+#### Tests
+
+I'm sorry but I will porbably not do them, :(
