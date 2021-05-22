@@ -6,6 +6,7 @@ pub const DB_PATH: &'static str = "cooldatabase.txt";
 pub const MAILBOX_PATH: &'static str = "coolmailbox.txt";
 pub const TOKEN_PATH: &'static str = "tokendatabase.txt";
 
-
 pub const WEBSITE_EMAIL: &'static str = "admin@secureAuthDotCom.com";
 pub const WEBSITE_NAME: &'static str = "secure auth dot com";
+
+pub const AUTH_FAILED: &'static str = "Email or password is incorrect";

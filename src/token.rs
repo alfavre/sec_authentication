@@ -1,40 +1,35 @@
 use super::constant;
-use chrono::{Duration,Utc,DateTime};
-use sodiumoxide::{base64::*,randombytes::*};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Error, Write};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use sodiumoxide::{base64::*, randombytes::*};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
 
-
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Token {
     pub b64_token: String,
-    pub creation_time:DateTime<Utc>,
-    pub initiator_email:String,
+    pub creation_time: DateTime<Utc>,
+    pub initiator_email: String,
 }
 
-impl Token{
-    pub fn create(initiator_email:&str)->String{
-
-        let random_bytes:Vec<u8>=randombytes(32);
-        let b64_endoded:String = encode(random_bytes, Variant::UrlSafe);
-        let new_token = Token{
+impl Token {
+    pub fn create(initiator_email: &str) -> String {
+        let random_bytes: Vec<u8> = randombytes(256); // value pifometree, 256 seems big, bigger means less birthday paradox
+        let b64_endoded: String = encode(random_bytes, Variant::UrlSafe);
+        let new_token = Token {
             b64_token: b64_endoded.clone(), // did not find how to do this without clone
             creation_time: Utc::now(),
             initiator_email: String::from(initiator_email),
         };
 
-
-        match Token::add_new_token_in_db(new_token){
+        match Token::add_new_token_in_db(new_token) {
             Ok(_) => return b64_endoded,
             Err(_) => panic!("Something went wrong sorry"), // this may cause info leakage
         }
     }
 
     /// copy pasted from the similar fn from credential
-    fn collect_all_tokens()->Result<Vec<Token>,Error>{
-
+    pub fn collect_all_tokens() -> Result<Vec<Token>, Error> {
         let mut vec = Vec::new();
 
         let input = File::open(constant::TOKEN_PATH)?;
@@ -47,7 +42,7 @@ impl Token{
     }
 
     /// copy pasted from the similar fn from credential
-    fn write_all_tokens(all_tokens: &mut Vec<Token>) -> Result<(), Error> {
+    pub fn write_all_tokens(all_tokens: &mut Vec<Token>) -> Result<(), Error> {
         let mut tokens_json = String::from("");
         let mut output = File::create(constant::TOKEN_PATH)?;
 
@@ -61,36 +56,51 @@ impl Token{
         Ok(())
     }
 
-    fn add_new_token_in_db(new_token:Token)->Result<(),Error>{
-
+    fn add_new_token_in_db(new_token: Token) -> Result<(), Error> {
         let mut all_tokens: Vec<Token>;
-        match Token::collect_all_tokens(){
+        match Token::collect_all_tokens() {
             Ok(vec_tok) => all_tokens = vec_tok,
             Err(_) => all_tokens = Vec::new(), // db not created, no need to panic
         }
 
-        
-        all_tokens.push(new_token); // push doesn't want a ref for some reason
+        all_tokens.push(new_token); // as vec is of token and not &token, new_token is consumed here, how sad
         Token::write_all_tokens(&mut all_tokens)?;
-        Ok(()) // gives the token back, // could not manage this othewise sadly, lifetimes allways didnt work when deserialisation needs to happen
+        Ok(())
     }
 
-    pub fn delete_old_token()-> Result<(),Error>{
-
+    pub fn delete_old_token() -> Result<(), Error> {
         let mut all_tokens: Vec<Token>;
-        match Token::collect_all_tokens(){
+        match Token::collect_all_tokens() {
             Ok(vec_tok) => all_tokens = vec_tok,
-            Err(_) =>  return Ok(()), // no token no work
+            Err(_) => return Ok(()), // no token no work
         }
 
+        println!("before {}", all_tokens.len());
+        all_tokens.retain(|token| token.is_token_valid());
+        println!("after {}", all_tokens.len());
 
-        println!("before {}",all_tokens.len());
-        all_tokens.retain(|token|  Utc::now().signed_duration_since((*token).creation_time) < Duration::minutes(constant::TTL));
-        println!("after {}",all_tokens.len());
-
-        Token::write_all_tokens(&mut all_tokens);
+        Token::write_all_tokens(&mut all_tokens)?;
 
         Ok(())
     }
 
+    pub fn delete(&self) -> Result<(), Error> {
+        let mut all_tokens: Vec<Token>;
+        match Token::collect_all_tokens() {
+            Ok(vec_tok) => all_tokens = vec_tok,
+            Err(_) => return Ok(()), // no token no work
+        }
+
+        println!("before {}", all_tokens.len());
+        all_tokens.retain(|token| token != self);
+        println!("after {}", all_tokens.len());
+
+        Token::write_all_tokens(&mut all_tokens)?;
+
+        Ok(())
+    }
+
+    pub fn is_token_valid(&self) -> bool {
+        Utc::now().signed_duration_since(self.creation_time) < Duration::minutes(constant::TTL)
+    }
 }
