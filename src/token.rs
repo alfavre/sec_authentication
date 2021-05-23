@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::{base64::*, randombytes::*};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
+use std::io::{BufRead, BufReader, Error, Write};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Token {
@@ -17,7 +17,7 @@ impl Token {
         let random_bytes: Vec<u8> = randombytes(256); // value pifometree, 256 seems big, bigger means less birthday paradox
         let b64_endoded: String = encode(random_bytes, Variant::UrlSafe);
         let new_token = Token {
-            b64_token: b64_endoded.clone(), // did not find how to do this without clone
+            b64_token: b64_endoded.clone(), // did not find how to do this without clone (the root of my problems in rust is lifetimes)
             creation_time: Utc::now(),
             initiator_email: String::from(initiator_email),
         };
@@ -75,9 +75,7 @@ impl Token {
             Err(_) => return Ok(()), // no token no work
         }
 
-        println!("before {}", all_tokens.len());
         all_tokens.retain(|token| token.is_token_valid());
-        println!("after {}", all_tokens.len());
 
         Token::write_all_tokens(&mut all_tokens)?;
 
@@ -91,9 +89,7 @@ impl Token {
             Err(_) => return Ok(()), // no token no work
         }
 
-        println!("before {}", all_tokens.len());
         all_tokens.retain(|token| token != self);
-        println!("after {}", all_tokens.len());
 
         Token::write_all_tokens(&mut all_tokens)?;
 

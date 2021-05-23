@@ -10,3 +10,4 @@ pub const WEBSITE_EMAIL: &'static str = "admin@secureAuthDotCom.com";
 pub const WEBSITE_NAME: &'static str = "secure auth dot com";
 
 pub const AUTH_FAILED: &'static str = "Email or password is incorrect";
+pub const INVALID_TOKEN: &'static str = "Invalid token.";

@@ -3,7 +3,6 @@ mod credential;
 mod mail;
 mod token;
 
-use google_authenticator::{ErrorCorrectionLevel, GoogleAuthenticator};
 use read_input::prelude::*;
 use std::io::Error;
 use zxcvbn::zxcvbn;
@@ -30,13 +29,15 @@ fn get_string_unrestricted(message: &str) -> String {
         .get()
 }
 
-fn handle_login() -> Result<bool, Error> {
+fn change_2fa_handle() -> Result<(), Error> {
+    // copy pasted from login because i need to know email input at this level
+
     let email_message = "Please enter an email address: ";
     let mut email_input;
     loop {
         email_input = get_string_unrestricted(email_message);
         if !mail::is_email_valid(email_input.as_str()) {
-            println!("Your email is not a real email address");
+            println!("Your email is not a real email address.");
             continue;
         }
         break;
@@ -47,7 +48,7 @@ fn handle_login() -> Result<bool, Error> {
     loop {
         password_input = get_string_unrestricted(password_message);
         if password_input.len() > 64 {
-            println!("password too long");
+            println!("password too long.");
             continue;
         }
         break;
@@ -60,7 +61,73 @@ fn handle_login() -> Result<bool, Error> {
             loop {
                 google_auth_token_input = get_string_unrestricted(google_token_message);
                 if google_auth_token_input.len() > 6 {
-                    println!("token too long");
+                    println!("token too long.");
+                    continue;
+                }
+                break;
+            }
+
+            if !(Credential::is_verified_with_2fa(
+                email_input.as_str(),
+                google_auth_token_input.as_str(),
+            ) && Credential::is_verified_with_password(
+                email_input.as_str(),
+                password_input.as_str(),
+            )) {
+                println!("{}", constant::AUTH_FAILED);
+                return Ok(());
+            };
+        }
+        Ok(false) => {
+            if !Credential::is_verified_with_password(email_input.as_str(), password_input.as_str())
+            {
+                println!("{}", constant::AUTH_FAILED);
+                return Ok(());
+            };
+        }
+        Err(e) => return Err(e),
+    }
+
+    // is logged do stuff
+
+    Credential::change_2fa_in_db(email_input.as_str())?;
+
+    println!("If you forgot you google auth qr code, we sent it a long time ago at your email.\nIf you deleted it contact an administrator.");
+
+    Ok(())
+}
+
+fn handle_login() -> Result<bool, Error> {
+    let email_message = "Please enter an email address: ";
+    let mut email_input;
+    loop {
+        email_input = get_string_unrestricted(email_message);
+        if !mail::is_email_valid(email_input.as_str()) {
+            println!("Your email is not a real email address.");
+            continue;
+        }
+        break;
+    }
+
+    let password_message = "Please enter a password: ";
+    let mut password_input;
+    loop {
+        password_input = get_string_unrestricted(password_message);
+        if password_input.len() > 64 {
+            println!("password too long.");
+            continue;
+        }
+        break;
+    }
+
+    match Credential::is_2fa_active(email_input.as_str()) {
+        Ok(true) => {
+            let google_token_message = "Please enter a google auth token: ";
+            let mut google_auth_token_input;
+            loop {
+                google_auth_token_input = get_string_unrestricted(google_token_message);
+                if google_auth_token_input.len() > 6 {
+                    println!("token too long.");
                     continue;
                 }
                 break;
@@ -84,9 +151,13 @@ fn handle_login() -> Result<bool, Error> {
     }
 }
 
-fn handle_token_redirection() -> Result<(), Error> {
-    let all_tokens: &mut Vec<Token> = &mut Token::collect_all_tokens()?;
-    let all_credentials: &mut Vec<Credential> = &mut Credential::collect_all_credentials()?;
+fn handle_token_redirection(all_credentials: &mut Vec<Credential>) -> Result<(), Error> {
+    let all_tokens: Vec<Token>;
+
+    match Token::collect_all_tokens() {
+        Ok(tokens) => all_tokens = tokens,
+        Err(_) => all_tokens = Vec::new(),
+    };
 
     let token_message = "Please enter the token you recieved via email: ";
     let b64_token = get_string_unrestricted(token_message);
@@ -99,13 +170,13 @@ fn handle_token_redirection() -> Result<(), Error> {
     {
         Some(token) => my_token = token,
         None => {
-            println!("Invalid token.");
+            println!("{}", constant::INVALID_TOKEN);
             return Ok(());
         }
     }
 
     if !my_token.is_token_valid() {
-        println!("Invalid token.");
+        println!("{}", constant::INVALID_TOKEN);
         return Ok(());
     }
 
@@ -118,13 +189,19 @@ fn handle_token_redirection() -> Result<(), Error> {
     }
 
     if email_exists {
+        // we can move to real pass reset
+
+        match handle_pass_reset(my_token) {
+            Ok(_) => println!("your password has been reset, try to login now."),
+            Err(_) => println!("the password process failed."),
+        }
 
         // handle forgot password
     } else {
         // we can move to real registration
         match handle_register(my_token) {
             Ok(_) => println!("try to login now."),
-            Err(_) => println!("the registration process failed"),
+            Err(_) => println!("the registration process failed."),
         }
     }
 
@@ -132,7 +209,75 @@ fn handle_token_redirection() -> Result<(), Error> {
         Ok(_) => println!(
             "Your token expired, if your operation wasn't successful, you will need a new one."
         ),
-        Err(_) => panic!("Token could not be deleted, contact an administrator"),
+        Err(_) => panic!("Token could not be deleted, contact an administrator."),
+    }
+
+    Ok(())
+}
+
+fn handle_pass_reset(token: &Token) -> Result<(), Error> {
+    println!(
+        "Welcome back.\nPlease proceed with the password reset for {}.",
+        token.initiator_email
+    );
+
+    match Credential::is_2fa_active(token.initiator_email.as_str()) {
+        Ok(true) => {
+            let google_token_message = "Please enter a google auth token: ";
+            let mut google_auth_token_input: String;
+
+            loop {
+                google_auth_token_input = get_string_unrestricted(google_token_message);
+                if google_auth_token_input.len() > 6 {
+                    println!("token too long.");
+                    continue;
+                }
+                break;
+            }
+
+            if !Credential::is_verified_with_2fa(
+                token.initiator_email.as_str(),
+                google_auth_token_input.as_str(),
+            ) {
+                println!("Invalid google auth, password reset rejected.");
+                return Ok(());
+            }
+        }
+        Ok(false) => (), // do nothing, no 2fa no problems
+        Err(e) => return Err(e),
+    }
+
+    let new_password_message = "Please enter your new password: ";
+    let mut new_password_input: String;
+
+    let confirm_new_password_message = "Please confirm your new password: ";
+    let mut confirm_new_password_input: String;
+
+    loop {
+        new_password_input = get_string_unrestricted(new_password_message);
+        confirm_new_password_input = get_string_unrestricted(confirm_new_password_message);
+
+        if new_password_input.len() > 64 || confirm_new_password_input.len() > 64 {
+            println!("one or both entries are too long");
+            continue;
+        }
+
+        if new_password_input != confirm_new_password_input {
+            println!("passwords dont match.");
+            continue;
+        }
+
+        if zxcvbn(new_password_input.as_str(), &[]).unwrap().score() < 3 {
+            println!("password is too weak.");
+            continue;
+        }
+
+        Credential::change_password_in_db(
+            token.initiator_email.as_str(),
+            new_password_input.as_str(),
+        )?;
+
+        break;
     }
 
     Ok(())
@@ -140,13 +285,14 @@ fn handle_token_redirection() -> Result<(), Error> {
 
 fn handle_register(token: &Token) -> Result<(), Error> {
     println!(
-        "Welcome back.\nPlease proceed with the registration for {}",
+        "Welcome back.\nPlease proceed with the registration for {}.",
         token.initiator_email
     );
-    let password_message = "Please enter a password: ";
-    let confirm_password_message = "Please confirm your password: ";
 
     loop {
+        let password_message = "Please enter a password: ";
+        let confirm_password_message = "Please confirm your password: ";
+
         let password = get_string_unrestricted(password_message);
         let confirmed_password = get_string_unrestricted(confirm_password_message);
 
@@ -170,7 +316,7 @@ fn handle_register(token: &Token) -> Result<(), Error> {
         break;
     }
 
-    println!("Your account has been registered.\nWelcome to the family");
+    println!("Your account has been registered.\nWe sent you the qr code for 2fa via mail, it is mandatory for first login, you can disable it afterwards\nWelcome to the family.");
 
     Ok(())
 }
@@ -182,7 +328,7 @@ fn give_forgot_password_token(all_credentials: &mut Vec<Credential>) -> Result<(
     let email_input = get_string_unrestricted(ask_token_message);
 
     if !mail::is_email_valid(email_input.as_str()) {
-        println!("Not an email address");
+        println!("Not an email address.");
         return Ok(());
     }
 
@@ -193,9 +339,10 @@ fn give_forgot_password_token(all_credentials: &mut Vec<Credential>) -> Result<(
     }
 
     let mail_message: String = format!(
-        "Here is your password reset token\n{}",
+        "Here is your password reset token.\nIf this mail wasn't expected, please ignore it.\n{}",
         Token::create(email_input.as_str())
-    );
+    ); // you can fill our db with token, token that wont ever be sent, and if you somehow mange to get it, you will just be able to create an account
+       // I will not put the token creation in an if loop, as it makes it vulnerable to timing attack, it's maybe a bad idea, but who cares
 
     if is_already_in_use {
         mail::send_mail_to(
@@ -203,7 +350,7 @@ fn give_forgot_password_token(all_credentials: &mut Vec<Credential>) -> Result<(
             format!("Password reset to {}", constant::WEBSITE_NAME).as_str(),
             mail_message.as_str(),
         )?;
-    }
+    } // google auth will be done when pass needs to change, someone could've stolen link
 
     Ok(())
 }
@@ -232,7 +379,7 @@ fn give_register_token(all_credentials: &mut Vec<Credential>) -> Result<(), Erro
         ));
     } else {
         mail_message = String::from(format!(
-            "Here is your token: {}",
+            "Here is your token:\n{}",
             Token::create(email_input.as_str())
         ))
     }
@@ -249,23 +396,27 @@ fn give_register_token(all_credentials: &mut Vec<Credential>) -> Result<(), Erro
 }
 
 fn main() {
-    let message_list = "1:\tLogin\n2:\tEnter a Token\n3:\tforgot my password\n4:\tget register token\nEnter your choice: ";
+    let message_list = "1:\tLogin\n2:\tEnter a Token\n3:\tGet password reset token\n4:\tGet register token\n5:\tChange 2FA status\nEnter your choice: ";
     let mut is_logged = false;
     loop {
-        let mut all_cred = Credential::collect_all_credentials().unwrap();
+        let mut all_cred: Vec<Credential>;
+        match Credential::collect_all_credentials() {
+            Ok(vec_cred) => all_cred = vec_cred,
+            Err(_) => all_cred = Vec::new(), // db empty, no need to panic
+        }
 
-        Token::delete_old_token();
+        Token::delete_old_token().unwrap(); // panics if this fails
 
         println!("Welcome to {}\n", constant::WEBSITE_NAME);
         println!("Logged status: {}", is_logged);
-        let choice_input = get_choice(4, message_list);
+        let choice_input = get_choice(5, message_list);
 
         match choice_input {
             1 => match handle_login() {
-                Ok(bool) => is_logged = bool,
-                Err(e) => println!("Error happened: {}", e),
+                Ok(my_bool) => is_logged = my_bool,
+                Err(_) => println!("{}", constant::AUTH_FAILED),
             },
-            2 => match handle_token_redirection() {
+            2 => match handle_token_redirection(&mut all_cred) {
                 Ok(_) => (),
                 Err(e) => println!("Error happened: {}", e),
             },
@@ -274,6 +425,10 @@ fn main() {
                 Err(e) => println!("Error happened: {}", e),
             },
             4 => match give_register_token(&mut all_cred) {
+                Ok(_) => (),
+                Err(e) => println!("Error happened: {}", e),
+            },
+            5 => match change_2fa_handle() {
                 Ok(_) => (),
                 Err(e) => println!("Error happened: {}", e),
             },

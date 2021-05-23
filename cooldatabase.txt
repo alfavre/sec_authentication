@@ -1,1 +1,1 @@
-{"email":"fav@alb.an","password_hash":"JDckQzYuLi4uLy4uLi5CYXNlREYwS1hudTZSejljWWdod0NGUHVPNERaS015ay84d3dxS2lVbTgyJFh0a1JOUzJybGoxa09JRkIwNFExNUFXb2s0VXltTW5NM1FnaXQ1UEdYWDUA","google_authenticator_secret":"YSBJGIKFB63JCPO6OABYTROLUZWHX7IA","is_2fa_active":false}
+{"email":"fav@alb.an","password_hash":"JDckQzYuLi4uLy4uLi5SWFkzcDFMdWdPQlFxLy4xMWVUMU9BWVBFcGlzMmR3V0V3NGxzcXlIUUo4JE9KS1p1OTVVNS9KLlIyMUpyS0xYaVlqcHEzVVIvaENLeDhFSEg1SGxzN0MA","google_authenticator_secret":"GYHVYI7YY5T4OC4FPQA7M6UXUCUMRSBD","is_2fa_active":true}

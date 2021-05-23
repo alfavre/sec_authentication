@@ -2,8 +2,8 @@ use super::{constant, mail};
 use google_authenticator::{ErrorCorrectionLevel, GoogleAuthenticator};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::base64::*;
+use sodiumoxide::crypto::pwhash;
 use sodiumoxide::crypto::pwhash::HashedPassword;
-use sodiumoxide::crypto::{pwhash, secretbox};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
 
@@ -30,7 +30,7 @@ impl Credential {
             ErrorCorrectionLevel::Medium,
         );
 
-        match mail::send_mail_to(email, "Your 2fa qr code", format!("Here is your qr code link for 2FA.\nYou should activate 2FA on your phone as soon as possible,\nIt is required tp continue using our service.\n{}",qr_code_url).as_str()){
+        match mail::send_mail_to(email, "Your 2fa qr code", format!("Here is your qr code link for 2FA.\nYou should activate 2FA on your phone with google authenticator as soon as possible,\nIt is required to continue using our service.\nThis mail should be saved if you want to add other devices\n{}",qr_code_url).as_str()){
             Ok(_) => println!("The 2FA mail has been sent to {}",email),
             Err(_) => panic!("Mail could not be sent, sorry for the inconvenience."),
         }
@@ -49,6 +49,18 @@ impl Credential {
             google_authenticator_secret: my_secret,
             is_2fa_active: true,
         }
+    }
+
+    fn set_pass_hash(&mut self, new_unhashed_pass: &str) -> () {
+        self.password_hash = encode(
+            pwhash::pwhash(
+                new_unhashed_pass.as_bytes(),
+                pwhash::OPSLIMIT_INTERACTIVE,
+                pwhash::MEMLIMIT_INTERACTIVE,
+            )
+            .unwrap(),
+            Variant::UrlSafe,
+        );
     }
 
     pub fn collect_all_credentials() -> Result<Vec<Credential>, Error> {
@@ -78,7 +90,7 @@ impl Credential {
     }
 
     /// it's impossible to create two credentials with the same email
-    /// but maybe I should check anyway
+    /// but maybe I should check anyway, nah
     pub fn add_new_credential_in_db(email: &str, password: &str) -> Result<(), Error> {
         let mut all_credentials: Vec<Credential>;
         match Credential::collect_all_credentials() {
@@ -91,9 +103,47 @@ impl Credential {
         Ok(())
     }
 
+    pub fn change_password_in_db(email: &str, new_password: &str) -> Result<(), Error> {
+        let mut all_cred: Vec<Credential> = Credential::collect_all_credentials()?;
+
+        let my_cred_pos: usize = all_cred
+            .iter()
+            .position(|cred| cred.email == email)
+            .unwrap(); // it should exist, if not panic is acceptable
+        let mut my_cred = all_cred.remove(my_cred_pos); // if only there was a way to do this in only one line
+
+        my_cred.set_pass_hash(new_password);
+
+        all_cred.push(my_cred);
+
+        Credential::write_all_credentials(&mut all_cred)?;
+        Ok(())
+    }
+
+    pub fn change_2fa_in_db(email: &str) -> Result<(), Error> {
+        let mut all_cred: Vec<Credential> = Credential::collect_all_credentials()?;
+
+        let my_cred_pos: usize = all_cred
+            .iter()
+            .position(|cred| cred.email == email)
+            .unwrap(); // it should exist, if not panic is acceptable
+        let mut my_cred = all_cred.remove(my_cred_pos); // if only there was a way to do this in only one line
+
+        my_cred.is_2fa_active = !my_cred.is_2fa_active;
+
+        all_cred.push(my_cred);
+
+        Credential::write_all_credentials(&mut all_cred)?;
+        Ok(())
+    }
+
     pub fn is_2fa_active(email: &str) -> Result<bool, Error> {
         // we look if account exists
-        let all_cred: Vec<Credential> = Credential::collect_all_credentials()?;
+        let all_cred: Vec<Credential>;
+        match Credential::collect_all_credentials() {
+            Ok(vec_cred) => all_cred = vec_cred,
+            Err(_) => all_cred = Vec::new(), // db empty, no need to panic
+        }
 
         match all_cred.iter().find(|&cred| cred.email == email) {
             Some(credential) => return Ok(credential.is_2fa_active),
